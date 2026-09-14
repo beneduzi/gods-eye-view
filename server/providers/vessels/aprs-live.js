@@ -4,6 +4,17 @@ import { parseAprsLine } from './aprs-parser.js';
 const MAX = 2000,
   STALE = 30 * 60_000;
 const records = new Map();
+const histories = new Map();
+const MAX_SAMPLES = 64;
+export function aprsAreaFilter(viewport) {
+  if (!viewport) return process.env.APRS_IS_FILTER || 'r/0/0/180';
+  let { west, south, east, north } = viewport;
+  west = Math.max(-180, Math.min(180, Number(west))); east = Math.max(-180, Math.min(180, Number(east)));
+  south = Math.max(-90, Math.min(90, Number(south))); north = Math.max(-90, Math.min(90, Number(north)));
+  if (![west,south,east,north].every(Number.isFinite) || south >= north || west === east) return process.env.APRS_IS_FILTER || 'r/0/0/180';
+  if (east < west) return `a/${(south+north)/2}/${(west+360)%360}/180`;
+  return `a/${(south+north)/2}/${(west+east)/2}/${Math.max(north-south,east-west)/2}`;
+}
 let socket = null,
   timer = null,
   attempt = 0,
