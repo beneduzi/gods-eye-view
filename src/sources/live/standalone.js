@@ -208,6 +208,7 @@ export function createAisStreamSource({
         complete: false,
       };
     },
+    async getTrack() { return { records: [], complete: false, unsupported: true, source: 'APRS-IS' }; },
   };
 }
 

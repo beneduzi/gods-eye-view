@@ -1,10 +1,14 @@
 import { createApplicationVessels } from '../app/layers/aisLiveVessels.js';
 
-import { createAisStreamSource } from '../sources/live/standalone.js';
+import {
+  createAisStreamSource,
+  createAprsIsSource,
+} from '../sources/live/standalone.js';
 
+const useAprs = import.meta.env?.VITE_VESSEL_SOURCE === 'aprs-is';
 const aisLiveVesselsLayer = createApplicationVessels({
-  source: createAisStreamSource({
-    apiUrl: import.meta.env?.VITE_AIS_LIVE_API_URL || '/api/ais-live',
+  source: (useAprs ? createAprsIsSource : createAisStreamSource)({
+    apiUrl: import.meta.env?.VITE_AIS_LIVE_API_URL || (useAprs ? '/api/aprs-live' : '/api/ais-live'),
   }),
   options: {
     maxRows: import.meta.env?.VITE_AIS_LIVE_MAX_ROWS,

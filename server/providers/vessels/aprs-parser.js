@@ -4,7 +4,7 @@ export function parseAprsLine(line, now = Date.now()) {
   const text = String(line || '').trim();
   if (!text || text.startsWith('#')) return null;
   const bang = text.indexOf('!AIVDM,');
-  const ais = bang >= 0 ? parseAis(text.slice(bang + 1), now) : null;
+  const ais = bang >= 0 ? parseAis(text.slice(bang), now) : null;
   if (ais) return ais;
   const colon = text.indexOf(':');
   if (colon < 1) return null;
@@ -26,10 +26,11 @@ function parseAprsPosition(payload) {
   const courseSpeed = payload.match(/([0-9]{3})\/([0-9]{3})/);
   return { lat, lon, course: courseSpeed ? Number(courseSpeed[1]) : null, speed: courseSpeed ? Number(courseSpeed[2]) : null, name: null, symbol: `${table?.[1] || ''}${sym}` };
 }
-function isMaritimeAprs(payload) { return /[>sS]|\/s|\\s/.test(payload); }
+// APRS ship (/s or \\s), boat (>), and yacht (Y/y) symbols only.
+function isMaritimeAprs(payload) { return /^[!=/@].*?[\\/]s|^[!=/@].*?>|^[!=/@].*?[Yy]/.test(payload); }
 function parseAis(sentence, now) {
   const fields = sentence.split(',');
-  if (fields[0] !== '!AIVDM' || !fields[5]) return null;
+  if (fields[0] !== '!AIVDM' || !/^\d+$/.test(fields[1] || '') || !/^\d+$/.test(fields[2] || '') || !fields[5]) return null;
   const bits = [...fields[5]].flatMap((c) => { const n = c.charCodeAt(0) - 48 - (c.charCodeAt(0) >= 88 ? 8 : 0); return Array.from({ length: 6 }, (_, i) => (n >> (5 - i)) & 1); });
   const type = bitsToInt(bits, 0, 6); if (![1, 2, 3, 18].includes(type)) return null;
   const mmsi = bitsToInt(bits, 8, 30).toString();
