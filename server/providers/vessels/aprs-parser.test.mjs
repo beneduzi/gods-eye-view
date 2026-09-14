@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { parseAprsLine } from './aprs-parser.js';
+import { parseAprsLine, parseAprsTelemetry } from './aprs-parser.js';
 
 test('parses all APRS position forms and maritime symbols', () => {
   const forms = ['!', '=', '/', '@'];
@@ -97,6 +97,30 @@ test('decodes Class A and Class B AIS position reports at the spec bit offsets',
   assert.ok(Math.abs(classB.course - 200.5) < 0.11);
   assert.ok(Math.abs(classB.speed - 5) < 0.11);
   assert.equal(classB.metadata.aisType, 18);
+});
+
+test('parses APRS telemetry and rejects malformed reports', () => {
+  const telemetry = parseAprsTelemetry(
+    'SHIP>APRS,TCPIP*:T#042,100,200,50,0,255,10101010',
+    1_700_000_000_000,
+  );
+  assert.equal(telemetry.reference, 'aprs:SHIP');
+  assert.equal(telemetry.callsign, 'SHIP');
+  assert.equal(telemetry.sequence, 42);
+  assert.deepEqual(telemetry.analog, [100, 200, 50, 0, 255]);
+  assert.equal(telemetry.digitalBits, '10101010');
+  assert.equal(telemetry.observedAtMs, 1_700_000_000_000);
+
+  assert.equal(parseAprsTelemetry('SHIP>APRS:T#042,100,200,50,0'), null);
+  assert.equal(
+    parseAprsTelemetry('SHIP>APRS:T#04x,100,200,50,0,255,10101010'),
+    null,
+  );
+  assert.equal(
+    parseAprsTelemetry('SHIP>APRS:T#042,100,200,50,0,255,1012'),
+    null,
+  );
+  assert.equal(parseAprsTelemetry('SHIP>APRS:!4903.50N/07201.75Ws'), null);
 });
 
 test('finds an AIVDM sentence inside an APRS-IS wrapper line', () => {

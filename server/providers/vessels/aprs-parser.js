@@ -100,3 +100,44 @@ function bitsToInt(bits, start, length) {
 function signed(n, width) {
   return n & (1 << (width - 1)) ? n - 2 ** width : n;
 }
+
+/**
+ * Parse an APRS telemetry report (`T#sss,a1,a2,a3,a4,a5,bbbbbbbb`).
+ *
+ * Analog channels are returned raw: APRS defines their units in the station's
+ * separate PARM/UNIT/EQNS messages, so inventing a unit here would be a lie.
+ * @param {string} line - One APRS-IS line.
+ * @param {number} [now] - Observation time in ms.
+ * @returns {?{reference:string,callsign:string,sequence:number,
+ *   analog:number[],digitalBits:string,observedAtMs:number}}
+ */
+export function parseAprsTelemetry(line, now = Date.now()) {
+  const text = String(line || '').trim();
+  if (!text || text.startsWith('#')) return null;
+  const colon = text.indexOf(':');
+  if (colon < 1) return null;
+  const payload = text.slice(colon + 1);
+  if (!payload.startsWith('T#')) return null;
+  const parts = payload.slice(2).split(',');
+  if (parts.length < 7) return null;
+  const sequence = parts[0].trim();
+  if (!/^\d{1,3}$/.test(sequence)) return null;
+  const analog = [];
+  for (let i = 1; i <= 5; i += 1) {
+    const raw = (parts[i] ?? '').trim();
+    if (!/^\d{1,3}$/.test(raw)) return null;
+    analog.push(Number(raw));
+  }
+  const digitalBits = (parts[6] ?? '').trim();
+  if (!/^[01]{1,8}$/.test(digitalBits)) return null;
+  const callsign = text.slice(0, colon).split('>')[0].trim();
+  if (!callsign) return null;
+  return {
+    reference: `aprs:${callsign}`,
+    callsign,
+    sequence: Number(sequence),
+    analog,
+    digitalBits: digitalBits.padStart(8, '0'),
+    observedAtMs: now,
+  };
+}

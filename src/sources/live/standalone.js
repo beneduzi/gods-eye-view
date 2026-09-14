@@ -220,9 +220,18 @@ export function createAprsIsSource({
 } = {}) {
   return {
     label: 'APRS-IS',
-    async getSnapshot({ maxRows = 2000 } = {}, { signal } = {}) {
+    async getSnapshot(
+      { maxRows = 2000, viewport = null } = {},
+      { signal } = {},
+    ) {
       const url = new URL(apiUrl, origin());
       url.searchParams.set('maxRows', String(maxRows));
+      if (viewport) {
+        for (const key of ['west', 'south', 'east', 'north']) {
+          if (Number.isFinite(viewport[key]))
+            url.searchParams.set(key, String(viewport[key]));
+        }
+      }
       const { response, payload } = await readResponse(
         fetchImpl,
         url.toString(),
@@ -234,17 +243,30 @@ export function createAprsIsSource({
           payload?.error || `APRS-IS unavailable (${response.status})`,
         );
       return {
-        records: Array.isArray(payload?.rows) ? payload.rows : [],
-        complete: false,
+        ...vesselSnapshot(payload, {
+          source: 'APRS-IS',
+          coverage: 'APRS-IS received positions',
+          referenceFor: (row) =>
+            String(row.reference || row.mmsi || row.input_identifier || ''),
+        }),
         status: payload?.status || 'unknown',
-        source: 'APRS-IS',
       };
     },
     async getTrack(reference, { signal } = {}) {
-      const url = new URL(`${apiUrl}/track`, origin()); url.searchParams.set('reference', reference);
-      const { response, payload } = await readResponse(fetchImpl, url.toString(), { signal }, 'APRS-IS');
+      const url = new URL(`${apiUrl}/track`, origin());
+      url.searchParams.set('reference', reference);
+      const { response, payload } = await readResponse(
+        fetchImpl,
+        url.toString(),
+        { signal },
+        'APRS-IS',
+      );
       if (!response.ok) throw httpError(response, 'APRS-IS');
-      return { records: normalizeVesselTrack(payload?.samples), complete: false, source: payload?.source || 'APRS-IS' };
+      return {
+        records: normalizeVesselTrack(payload?.samples),
+        complete: false,
+        source: payload?.source || 'APRS-IS',
+      };
     },
   };
 }
