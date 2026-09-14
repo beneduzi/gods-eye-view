@@ -210,3 +210,17 @@ export function createAisStreamSource({
     },
   };
 }
+
+/** APRS-IS is an alternate provider-neutral vessel feed; the layer can opt in
+ * by selecting this source without adding another renderer. */
+export function createAprsIsSource({ fetchImpl = defaultFetch, apiUrl = '/api/aprs-live', origin = () => globalThis.location?.origin || 'http://localhost' } = {}) {
+  return {
+    label: 'APRS-IS',
+    async getSnapshot({ maxRows = 2000 } = {}, { signal } = {}) {
+      const url = new URL(apiUrl, origin()); url.searchParams.set('maxRows', String(maxRows));
+      const { response, payload } = await readResponse(fetchImpl, url.toString(), { signal, cache: 'no-store' }, 'APRS-IS live');
+      if (!response.ok) throw new Error(payload?.error || `APRS-IS unavailable (${response.status})`);
+      return { records: Array.isArray(payload?.rows) ? payload.rows : [], complete: false, status: payload?.status || 'unknown', source: 'APRS-IS' };
+    },
+  };
+}
