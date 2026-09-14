@@ -4,21 +4,25 @@ import { starNativeZipUrl } from './catalog.js';
 
 export const TILE_SIZE = 512;
 export const MAX_ZOOM = 6;
-const MAX_ZIP_BYTES = 80 * 1024 * 1024;
+export const MIN_ZOOM = 6;
+export const MAX_ZIP_BYTES = 80 * 1024 * 1024;
+export const MAX_JPEG_BYTES = 180 * 1024 * 1024;
 
 export function validateNativeTile({ satellite, frameId, z, x, y } = {}) {
   if (!/^GOES-(18|19)$/.test(satellite) || !/^[a-z0-9-]{8,100}$/i.test(frameId)) return false;
   z = Number(z); x = Number(x); y = Number(y);
   const n = 2 ** z;
-  return Number.isInteger(z) && z >= 0 && z <= MAX_ZOOM && Number.isInteger(x) && Number.isInteger(y) && x >= 0 && y >= 0 && x < n && y < n;
+  return Number.isInteger(z) && z >= MIN_ZOOM && z <= MAX_ZOOM && Number.isInteger(x) && Number.isInteger(y) && x >= 0 && y >= 0 && x < n && y < n;
 }
 
-function unzipJpeg(buffer) {
-  if (buffer.length > MAX_ZIP_BYTES || buffer.readUInt32LE(0) !== 0x04034b50) throw new Error('Invalid native C02 ZIP');
+export function unzipJpeg(buffer) {
+  if (!Buffer.isBuffer(buffer) || buffer.length > MAX_ZIP_BYTES || buffer.length < 30 || buffer.readUInt32LE(0) !== 0x04034b50) throw new Error('Invalid native C02 ZIP');
   const method = buffer.readUInt16LE(8); const compressed = buffer.readUInt32LE(18); const start = 30 + buffer.readUInt16LE(26) + buffer.readUInt16LE(28);
   if (!compressed || start < 30 || start + compressed > buffer.length) throw new Error('Malformed native C02 ZIP');
   const data = buffer.subarray(start, start + compressed);
-  return method === 0 ? data : method === 8 ? inflateRawSync(data, { maxOutputLength: 22000 * 22000 }) : (() => { throw new Error('Unsupported native C02 ZIP'); })();
+  const jpeg = method === 0 ? data : method === 8 ? inflateRawSync(data, { maxOutputLength: MAX_JPEG_BYTES }) : (() => { throw new Error('Unsupported native C02 ZIP'); })();
+  if (jpeg.length > MAX_JPEG_BYTES || jpeg[0] !== 0xff || jpeg[1] !== 0xd8) throw new Error('Invalid native C02 JPEG');
+  return jpeg;
 }
 
 export function createNativeTileStore({ fetchImpl = fetch, maxFrames = 2 } = {}) {
@@ -33,12 +37,13 @@ export function createNativeTileStore({ fetchImpl = fetch, maxFrames = 2 } = {})
       const response = await fetchImpl(starNativeZipUrl({ starCode: satellite === 'GOES-19' ? 'GOES19' : 'GOES18' }));
       if (!response.ok) throw new Error(`STAR native C02 request failed: ${response.status}`);
       const bytes = Buffer.from(await response.arrayBuffer());
-      image = sharp(unzipJpeg(bytes));
+      image = unzipJpeg(bytes);
       frames.set(`${satellite}/${frameId}`, image);
       while (frames.size > maxFrames) frames.delete(frames.keys().next().value);
     }
     const n = 2 ** Number(z); const size = Math.ceil(21696 / n);
-    const png = await image.clone().resize(21696, 21696).extract({ left: Number(x) * size, top: Number(y) * size, width: Math.min(size, 21696 - Number(x) * size), height: Math.min(size, 21696 - Number(y) * size) }).png().toBuffer();
+    // libvips region-decodes the requested crop; no full decoded RGBA raster is retained.
+    const png = await sharp(image, { limitInputPixels: 21696 * 21696 }).extract({ left: Number(x) * size, top: Number(y) * size, width: Math.min(size, 21696 - Number(x) * size), height: Math.min(size, 21696 - Number(y) * size) }).png().toBuffer();
     tiles.set(key, png); return png;
   }
   return { getTile };
