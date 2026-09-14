@@ -16,7 +16,7 @@ export function parseAprsLine(line, now = Date.now()) {
 }
 
 function parseAprsPosition(payload) {
-  const m = payload.match(/^[!=/@][^0-9A-Z]*([0-9]{2})([0-9]{2}\.[0-9]{2})([NS])([/\\])([0-9]{3})([0-9]{2}\.[0-9]{2})([EW])([A-Za-z0-9])/);
+  const m = payload.match(/^[!=/@].*?([0-9]{2})([0-9]{2}\.[0-9]{2})([NS])([/\\])([0-9]{3})([0-9]{2}\.[0-9]{2})([EW])([A-Za-z0-9>])/);
   if (!m) return null;
   const lat = (Number(m[1]) + Number(m[2]) / 60) * (m[3] === 'S' ? -1 : 1);
   const lon = (Number(m[5]) + Number(m[6]) / 60) * (m[7] === 'W' ? -1 : 1);
@@ -27,10 +27,10 @@ function parseAprsPosition(payload) {
   return { lat, lon, course: courseSpeed ? Number(courseSpeed[1]) : null, speed: courseSpeed ? Number(courseSpeed[2]) : null, name: null, symbol: `${table?.[1] || ''}${sym}` };
 }
 // APRS ship (/s or \\s), boat (>), and yacht (Y/y) symbols only.
-function isMaritimeAprs(payload) { return /^[!=/@].*?[\\/]s|^[!=/@].*?>|^[!=/@].*?[Yy]/.test(payload); }
+function isMaritimeAprs(payload) { return /^[!=/@].*[\\/][0-9]{3}[0-9]{2}\.[0-9]{2}[EW]s$/.test(payload) || />$/.test(payload) || /[EW][Yy]$/.test(payload); }
 function parseAis(sentence, now) {
   const fields = sentence.split(',');
-  if (fields[0] !== '!AIVDM' || !/^\d+$/.test(fields[1] || '') || !/^\d+$/.test(fields[2] || '') || !fields[5]) return null;
+  if (fields[0] !== '!AIVDM' || !/^\d+$/.test(fields[1] || '') || !/^\d+$/.test(fields[2] || '') || !fields[5] || fields[5].length < 20) return null;
   const bits = [...fields[5]].flatMap((c) => { const n = c.charCodeAt(0) - 48 - (c.charCodeAt(0) >= 88 ? 8 : 0); return Array.from({ length: 6 }, (_, i) => (n >> (5 - i)) & 1); });
   const type = bitsToInt(bits, 0, 6); if (![1, 2, 3, 18].includes(type)) return null;
   const mmsi = bitsToInt(bits, 8, 30).toString();

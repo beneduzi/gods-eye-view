@@ -208,7 +208,6 @@ export function createAisStreamSource({
         complete: false,
       };
     },
-    async getTrack() { return { records: [], complete: false, unsupported: true, source: 'APRS-IS' }; },
   };
 }
 
@@ -223,5 +222,6 @@ export function createAprsIsSource({ fetchImpl = defaultFetch, apiUrl = '/api/ap
       if (!response.ok) throw new Error(payload?.error || `APRS-IS unavailable (${response.status})`);
       return { records: Array.isArray(payload?.rows) ? payload.rows : [], complete: false, status: payload?.status || 'unknown', source: 'APRS-IS' };
     },
+    async getTrack() { return { records: [], complete: false, unsupported: true }; },
   };
 }
