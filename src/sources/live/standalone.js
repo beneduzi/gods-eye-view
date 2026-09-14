@@ -240,8 +240,11 @@ export function createAprsIsSource({
         source: 'APRS-IS',
       };
     },
-    async getTrack() {
-      return { records: [], complete: false, unsupported: true };
+    async getTrack(reference, { signal } = {}) {
+      const url = new URL(`${apiUrl}/track`, origin()); url.searchParams.set('reference', reference);
+      const { response, payload } = await readResponse(fetchImpl, url.toString(), { signal }, 'APRS-IS');
+      if (!response.ok) throw httpError(response, 'APRS-IS');
+      return { records: normalizeVesselTrack(payload?.samples), complete: false, source: payload?.source || 'APRS-IS' };
     },
   };
 }
