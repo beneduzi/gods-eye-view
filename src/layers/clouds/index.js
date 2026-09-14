@@ -66,6 +66,7 @@ export function createCloudsLayer({ feed, cesium = Cesium, services, alpha } = {
         const nextLayers = [];
         for (const source of nextManifest.sources) {
           if (source.unavailable || !Array.isArray(source.parts)) continue;
+          if (product === 'ABI2' && source.tileAvailability && source.tileTemplate) { const provider = new cesium.UrlTemplateImageryProvider({ url: source.tileTemplate, rectangle: cesium.Rectangle.fromDegrees(-180, -90, 180, 90), maximumLevel: source.maxZoom ?? 6, tileWidth: source.tileSize ?? 512, tileHeight: source.tileSize ?? 512 }); const imagery = viewer.imageryLayers.addImageryProvider(provider); imagery.alpha = opacity; nextLayers.push(imagery); continue; }
           for (const part of source.parts) {
             if (combined.aborted || request !== controller || !enabled || current !== generation) return false;
             try {
