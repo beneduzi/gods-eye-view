@@ -4,6 +4,7 @@ import { fetchStarFrame } from './goes/star.js';
 import { createFrameCache } from './goes/cache.js';
 import { satelliteNav } from './geostationary/projection.js';
 import { reprojectToEquirectangular } from './geostationary/raster.js';
+import { createNativeTileStore, TILE_SIZE, MAX_ZOOM, validateNativeTile } from './goes/nativeTiles.js';
 
 // STAR JPEG values are display brightness, not calibrated temperature. These
 // conservative ramps/masks are deliberately only an approximate visual proxy.
@@ -20,6 +21,7 @@ export function applyCloudProduct(rgba, product, companionGray) {
 /** Install the keyless GOES imagery proxy. */
 export function goesProxy({ fetchImpl = fetch, now = () => Date.now(), outputHeight = null, ttlMs = 5 * 60_000, maxOutputHeight = 4096 } = {}) {
   const cache = createFrameCache();
+  const nativeTiles = createNativeTileStore({ fetchImpl });
   const manifests = new Map();
   let refreshing = null;
   async function refresh(product) {
@@ -56,7 +58,7 @@ export function goesProxy({ fetchImpl = fetch, now = () => Date.now(), outputHei
           })));
           cache.put(frameId, parts);
         }
-          return { satelliteId: satellite.id, subSatelliteLongitude: satellite.lon0, product, upstreamProduct: product, frameId, observationTime: frame.lastModifiedMs, observationTimeSource: frame.lastModifiedMs == null ? 'unknown' : 'last-modified', stale: false, unavailable: false, reason: null, sourceWidth, sourceHeight, requestedWidth: spec.endpointSize, requestedHeight: spec.endpointSize, sourceResolutionKm: spec.fallbackResolutionKm ?? spec.nominalResolutionKm, nominalResolutionKm: spec.nominalResolutionKm, resolutionState: spec.resolutionState, nativeWidth: spec.nativeWidth, nativeHeight: spec.nativeHeight, nativeResolutionKm: spec.nominalResolutionKm, fallbackResolutionKm: spec.fallbackResolutionKm ?? null, nativeZipNote: spec.nativeZipNote ?? null, parts: parts.map((part, i) => ({ url: `/api/goes/frames/${frameId}/${i}.png`, rectangle: part.rectangle, width: part.width, height: part.height })) };
+          return { satelliteId: satellite.id, subSatelliteLongitude: satellite.lon0, product, upstreamProduct: product, frameId, observationTime: frame.lastModifiedMs, observationTimeSource: frame.lastModifiedMs == null ? 'unknown' : 'last-modified', stale: false, unavailable: false, reason: null, sourceWidth, sourceHeight, requestedWidth: spec.endpointSize, requestedHeight: spec.endpointSize, sourceResolutionKm: spec.fallbackResolutionKm ?? spec.nominalResolutionKm, nominalResolutionKm: spec.nominalResolutionKm, resolutionState: spec.resolutionState, nativeWidth: spec.nativeWidth, nativeHeight: spec.nativeHeight, nativeResolutionKm: spec.nominalResolutionKm, fallbackResolutionKm: spec.fallbackResolutionKm ?? null, nativeZipNote: spec.nativeZipNote ?? null, tileAvailability: product === 'ABI2', tileSize: product === 'ABI2' ? TILE_SIZE : null, maxZoom: product === 'ABI2' ? MAX_ZOOM : null, tileTemplate: product === 'ABI2' ? `/api/goes/native-tiles/${satellite.id}/${frameId}/{z}/{x}/{y}.png` : null, sourceUrl: product === 'ABI2' ? `https://cdn.star.nesdis.noaa.gov/${satellite.starCode}/ABI/FD/0.5km/21696x21696.jpg.zip` : null, parts: parts.map((part, i) => ({ url: `/api/goes/frames/${frameId}/${i}.png`, rectangle: part.rectangle, width: part.width, height: part.height })) };
       } catch (error) {
         const previous = manifests.get(product)?.sources.find((source) => source.satelliteId === satellite.id);
         return previous ? { ...previous, unavailable: true, reason: error.message } : { satelliteId: satellite.id, subSatelliteLongitude: satellite.lon0, product: 'imagery', upstreamProduct: GOES_STAR_PRODUCT, frameId: null, observationTime: null, observationTimeSource: 'unknown', stale: false, unavailable: true, reason: error.message, parts: [] };
@@ -68,7 +70,9 @@ export function goesProxy({ fetchImpl = fetch, now = () => Date.now(), outputHei
   function json(res, value, status = 200) { res.statusCode = status; res.setHeader('Content-Type', 'application/json'); res.setHeader('Cache-Control', 'no-store'); res.end(JSON.stringify(value)); }
   async function middleware(req, res, next) {
     const url = new URL(req.url, 'http://localhost');
-      if (url.pathname === '/api/goes/manifest') {
+      const tile = url.pathname.match(/^\/api\/goes\/native-tiles\/(GOES-(?:18|19))\/([^/]+)\/(\d+)\/(\d+)\/(\d+)\.png$/);
+     if (tile) { const [, satellite, frameId, z, x, y] = tile; if (!validateNativeTile({ satellite, frameId, z, x, y })) return json(res, { error: 'invalid_tile' }, 400); try { const png = await nativeTiles.getTile(satellite, frameId, z, x, y); res.setHeader('Content-Type', 'image/png'); res.setHeader('Cache-Control', 'public, max-age=31536000, immutable'); res.end(png); } catch (error) { return json(res, { error: 'native_tile_unavailable', reason: error.message }, 503); } return; }
+     if (url.pathname === '/api/goes/manifest') {
        const product = url.searchParams.get('product') || GOES_STAR_PRODUCT;
        if (!isGoESStarProduct(product)) return json(res, { error: 'unsupported_product' }, 400);
        let manifest = manifests.get(product);
