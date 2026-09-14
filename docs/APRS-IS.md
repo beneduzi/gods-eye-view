@@ -42,6 +42,13 @@ values and eight digital bits are what the API exposes. Telemetry is attached
 to the matching vessel record and returned by the track endpoint; no telemetry
 units are invented.
 
+The latest reading is rendered through the existing vessel card detail-line
+contract rather than a dedicated renderer: a `TLM #n · A: … · D: …` detail line
+on the selected card, a compact `TLM #n` summary on ambient cards that have no
+other metrics to show, and a monospace telemetry line in the vessel HUD. A
+refresh without a telemetry report keeps the last known reading, and APRS rows
+are labelled `APRS`/`CALL` while AIS rows keep `AIS`/`MMSI`.
+
 ## Limitations
 
 - AIS multipart (type 5 static data) and long-range type 27 reports are not
