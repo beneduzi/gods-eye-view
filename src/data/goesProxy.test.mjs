@@ -79,6 +79,10 @@ test('GOES manifest describes both satellites with geographic parts', async () =
   assert.equal(body.sources.length, 2);
   for (const source of body.sources) {
     assert.equal(source.unavailable, false);
+    assert.equal(source.requestedWidth, 5424);
+    assert.equal(source.requestedHeight, 5424);
+    assert.equal(source.sourceWidth, 64);
+    assert.equal(source.sourceHeight, 64);
     assert.ok(source.frameId);
     assert.equal(source.parts.length >= 1, true);
     for (const part of source.parts) {

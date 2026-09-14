@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto';
-import { starImageUrl } from './catalog.js';
+import { GOES_STAR_PRODUCTS, starImageUrl } from './catalog.js';
 
 /** Fetch and validate one STAR CDN frame. */
-export async function fetchStarFrame(satellite, { fetchImpl = fetch, size = 1808, signal } = {}) {
-  const response = await fetchImpl(starImageUrl(satellite, { size }), { signal });
+export async function fetchStarFrame(satellite, { fetchImpl = fetch, size = GOES_STAR_PRODUCTS[product]?.endpointSize, product = 'GEOCOLOR', signal } = {}) {
+  const response = await fetchImpl(starImageUrl(satellite, { size, product }), { signal });
   if (!response.ok) throw new Error(`STAR request failed: ${response.status}`);
   const buffer = Buffer.from(await response.arrayBuffer());
   if (buffer[0] !== 0xff || buffer[1] !== 0xd8) throw new Error('STAR response is not JPEG');
