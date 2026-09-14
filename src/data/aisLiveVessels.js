@@ -29,6 +29,10 @@ export const buildVesselCard = aisLiveVesselsLayer.buildVesselCard;
 export const buildSelectedVesselCard =
   aisLiveVesselsLayer.buildSelectedVesselCard;
 export const cardScreenSeparated = aisLiveVesselsLayer.cardScreenSeparated;
+export const formatTelemetry = aisLiveVesselsLayer.formatTelemetry;
+export const formatTelemetrySummary =
+  aisLiveVesselsLayer.formatTelemetrySummary;
+export const formatHudTelemetry = aisLiveVesselsLayer.formatHudTelemetry;
 export const _bindVesselInteractionForTest =
   aisLiveVesselsLayer.testing._bindVesselInteractionForTest;
 export const _setVesselStateForTest =
