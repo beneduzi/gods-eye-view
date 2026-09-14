@@ -3,9 +3,9 @@ export function createCloudsSource({
   fetchImpl = (...args) => globalThis.fetch(...args),
 } = {}) {
   return {
-    async getSnapshot({ signal } = {}) {
+    async getSnapshot({ signal, product = 'GEOCOLOR' } = {}) {
       signal?.throwIfAborted();
-      const response = await fetchImpl('/api/goes/manifest', {
+      const response = await fetchImpl('/api/goes/manifest?product=' + encodeURIComponent(product), {
         signal,
         cache: 'no-store',
       });

@@ -1,6 +1,25 @@
 import { GOES_GRID_HALF_EXTENT_RAD, geodeticToScanAngles } from './projection.js';
 
-/** Reproject an RGBA fixed-grid image into one or more equirectangular parts. */
+/** Normalize a longitude difference into [-180, 180]. */
+function normalizeDegrees(value) {
+  let result = value;
+  while (result > 180) result -= 360;
+  while (result <= -180) result += 360;
+  return result;
+}
+
+/**
+ * Reproject an RGBA fixed-grid image into one or more equirectangular parts.
+ *
+ * When `ownershipLongitudes` holds more than one satellite longitude, each
+ * output pixel is kept only for the satellite it is angularly closest to, with
+ * a smooth alpha ramp over `featherDeg` at the sector boundary. That turns the
+ * hard overlap between two geostationary disks into a feathered seam.
+ *
+ * @param {{rgba: ArrayLike<number>, srcWidth: number, srcHeight: number,
+ *   nav: object, outputHeight?: number, maxOutputWidth?: number,
+ *   ownershipLongitudes?: number[], ownerLon0?: number, featherDeg?: number}} input
+ */
 export function reprojectToEquirectangular({
   rgba,
   srcWidth,
@@ -8,6 +27,9 @@ export function reprojectToEquirectangular({
   nav,
   outputHeight = 1024,
   maxOutputWidth = 4096,
+  ownershipLongitudes = null,
+  ownerLon0 = nav.lon0,
+  featherDeg = 3,
 }) {
   const maxLat = horizonSearch((lat) => geodeticToScanAngles(lat, nav.lon0, nav) !== null);
   const maxLonOffset = horizonSearch((offset) => geodeticToScanAngles(0, nav.lon0 + offset, nav) !== null);
@@ -19,6 +41,7 @@ export function reprojectToEquirectangular({
     : minLon < -180
       ? [{ west: minLon + 360, east: 180 }, { west: -180, east: maxLon }]
       : [{ west: minLon, east: 180 }, { west: -180, east: maxLon - 360 }];
+  const ownsSectors = Array.isArray(ownershipLongitudes) && ownershipLongitudes.length > 1;
   return {
     parts: longitudeParts.map(({ west, east }) => {
       const width = Math.max(1, Math.min(maxOutputWidth, Math.round(outputHeight * (east - west) / (maxLat - minLat))));
@@ -27,6 +50,18 @@ export function reprojectToEquirectangular({
         for (let col = 0; col < width; col += 1) {
           const lat = maxLat - (row + 0.5) / outputHeight * (maxLat - minLat);
           const lon = west + (col + 0.5) / width * (east - west);
+          let alpha = 1;
+          if (ownsSectors) {
+            const own = Math.abs(normalizeDegrees(lon - ownerLon0));
+            let nearestOther = Infinity;
+            for (const other of ownershipLongitudes) {
+              if (other === ownerLon0) continue;
+              nearestOther = Math.min(nearestOther, Math.abs(normalizeDegrees(lon - other)));
+            }
+            // Another satellite is closer: this pixel belongs to it.
+            if (own >= nearestOther) continue;
+            alpha = Math.min(1, (nearestOther - own) / featherDeg);
+          }
           const scan = geodeticToScanAngles(lat, lon, nav);
           if (!scan) continue;
           const srcX = (scan.x + GOES_GRID_HALF_EXTENT_RAD) / (2 * GOES_GRID_HALF_EXTENT_RAD) * (srcWidth - 1);
@@ -44,7 +79,7 @@ export function reprojectToEquirectangular({
             const bottom = rgba[(y1 * srcWidth + x0) * 4 + channel] * (1 - fx) + rgba[(y1 * srcWidth + x1) * 4 + channel] * fx;
             output[index + channel] = top * (1 - fy) + bottom * fy;
           }
-          output[index + 3] = 255;
+          output[index + 3] = Math.round(255 * alpha);
         }
       }
       return { rgba: output, width, height: outputHeight, rectangle: { west, south: minLat, east, north: maxLat } };

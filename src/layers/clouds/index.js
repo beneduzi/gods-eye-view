@@ -33,6 +33,10 @@ export function createCloudsLayer({ feed, cesium = Cesium, services, alpha } = {
   let manifest = null;
   let guidance = null;
   let opacity = typeof alpha === 'number' ? alpha : cloudsAlpha('medium');
+  let product = 'GEOCOLOR';
+  const products = [
+    ['GEOCOLOR', 'GeoColor'], ['ABI13', 'ABI 13 infrared'], ['ABI2', 'ABI 2 visible'],
+  ];
 
   const removeOwned = () => {
     if (viewer?.imageryLayers) for (const layer of owned) viewer.imageryLayers.remove(layer);
@@ -57,7 +61,7 @@ export function createCloudsLayer({ feed, cesium = Cesium, services, alpha } = {
           removeOwned(); guidance = 'Cloud imagery requires Satellite or OSM map';
           return true;
         }
-        const nextManifest = await feed.getSnapshot({ signal: combined });
+         const nextManifest = await feed.getSnapshot({ signal: combined, product });
         if (combined.aborted || request !== controller || !enabled || current !== generation) return false;
         const nextLayers = [];
         for (const source of nextManifest.sources) {
@@ -86,6 +90,9 @@ export function createCloudsLayer({ feed, cesium = Cesium, services, alpha } = {
         return true;
       } finally { if (request === controller) request = null; }
     },
+    setParams(params = {}) { if (['GEOCOLOR', 'ABI13', 'ABI2'].includes(params.product)) { product = params.product; generation++; request?.abort(); this._rowControlsListener?.(); return true; } return false; },
+    getRowControls() { return { chips: products.map(([id, label]) => ({ id, label, active: product === id, params: { product: id } })), info: 'STAR CDN JPEG products; infrared is an approximate display proxy.' }; },
+    setRowControlsListener(listener) { this._rowControlsListener = listener; },
     destroy() { request?.abort(); request = null; enabled = false; removeOwned(); viewer = null; manifest = null; guidance = null; generation++; },
     getStats() { if (!manifest) return { count: 0, lastUpdate: null, error: guidance }; const stats = cloudStats(manifest); return { ...stats, error: guidance || stats.error }; },
     getOwnedLayerCount() { return owned.length; },
