@@ -51,7 +51,10 @@ const DECODED_U = {
   dj: 90,
   values: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
 };
-const DECODED_V = { ...DECODED_U, values: [21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32] };
+const DECODED_V = {
+  ...DECODED_U,
+  values: [21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32],
+};
 
 /** Resampled-grid metadata shared by the injected model fakes. */
 const GRID = { nx: 4, ny: 3, lo1: 0, la1: 90, dx: 90, dy: 90 };
@@ -89,8 +92,18 @@ test('wind manifest describes the GFS cycle and resampled grid', async () => {
   assert.equal(body.cycle.hour, 6);
   assert.equal(body.cycle.date, '20260914');
   assert.equal(body.units, 'm/s');
-  assert.deepEqual(body.grid, { nx: 4, ny: 3, lo1: 0, la1: 90, dx: 90, dy: 90 });
-  assert.match(body.gridUrl, /^\/api\/wind\/grid\/gfs-20260914-6-90\.bin\?model=gfs$/);
+  assert.deepEqual(body.grid, {
+    nx: 4,
+    ny: 3,
+    lo1: 0,
+    la1: 90,
+    dx: 90,
+    dy: 90,
+  });
+  assert.match(
+    body.gridUrl,
+    /^\/api\/wind\/grid\/gfs-20260914-6-90\.bin\?model=gfs$/,
+  );
   assert.equal(body.stale, false);
 });
 
@@ -136,10 +149,18 @@ test('wind refresh is cached within the TTL and refetches after it', async () =>
   const afterFirst = counter.calls;
   assert.equal(afterFirst, 3, 'one idx plus two range fetches');
   await request('/');
-  assert.equal(counter.calls, afterFirst, 'a second request inside the TTL must not refetch');
+  assert.equal(
+    counter.calls,
+    afterFirst,
+    'a second request inside the TTL must not refetch',
+  );
   clock += 2 * 3600_000;
   await request('/');
-  assert.equal(counter.calls, afterFirst + 3, 'a request past the TTL refetches');
+  assert.equal(
+    counter.calls,
+    afterFirst + 3,
+    'a request past the TTL refetches',
+  );
 });
 
 test('wind serves last-good with stale on upstream failure', async () => {
@@ -176,8 +197,18 @@ test('wind grid ids and URLs are model-scoped', async () => {
   const request = install(
     proxy({
       models: {
-        gfs: async () => ({ cycle: { date: '20260914', hour: 6 }, level: 'x', units: 'm/s', grid: { ...GRID, u: new Float32Array(12), v: new Float32Array(12) } }),
-        ifs: async () => ({ cycle: { date: '20260914', hour: 0 }, level: 'x', units: 'm/s', grid: { ...GRID, u: new Float32Array(12), v: new Float32Array(12) } }),
+        gfs: async () => ({
+          cycle: { date: '20260914', hour: 6 },
+          level: 'x',
+          units: 'm/s',
+          grid: { ...GRID, u: new Float32Array(12), v: new Float32Array(12) },
+        }),
+        ifs: async () => ({
+          cycle: { date: '20260914', hour: 0 },
+          level: 'x',
+          units: 'm/s',
+          grid: { ...GRID, u: new Float32Array(12), v: new Float32Array(12) },
+        }),
       },
     }),
   );
@@ -186,8 +217,14 @@ test('wind grid ids and URLs are model-scoped', async () => {
   assert.match(gfs.gridUrl, /gfs-20260914-6-90\.bin\?model=gfs$/);
   assert.match(ifs.gridUrl, /ifs-20260914-0-90\.bin\?model=ifs$/);
   // Each model's grid resolves through its own model parameter.
-  assert.equal((await request(gfs.gridUrl.replace('/api/wind', ''))).statusCode, 200);
-  assert.equal((await request(ifs.gridUrl.replace('/api/wind', ''))).statusCode, 200);
+  assert.equal(
+    (await request(gfs.gridUrl.replace('/api/wind', ''))).statusCode,
+    200,
+  );
+  assert.equal(
+    (await request(ifs.gridUrl.replace('/api/wind', ''))).statusCode,
+    200,
+  );
 });
 
 test('wind rejects a non-finite grid instead of caching it', async () => {
@@ -196,7 +233,12 @@ test('wind rejects a non-finite grid instead of caching it', async () => {
   const request = install(
     proxy({
       models: {
-        gfs: async () => ({ cycle: { date: '20260914', hour: 6 }, level: 'x', units: 'm/s', grid: { ...GRID, u: bad, v: new Float32Array(12) } }),
+        gfs: async () => ({
+          cycle: { date: '20260914', hour: 6 },
+          level: 'x',
+          units: 'm/s',
+          grid: { ...GRID, u: bad, v: new Float32Array(12) },
+        }),
       },
     }),
   );

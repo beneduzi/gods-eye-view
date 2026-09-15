@@ -1,4 +1,10 @@
-import { advectParticle, metersPerDegreeLon, sampleWind, windColor, windSpeed } from './model.js';
+import {
+  advectParticle,
+  metersPerDegreeLon,
+  sampleWind,
+  windColor,
+  windSpeed,
+} from './model.js';
 
 /**
  * Canvas particle renderer for a global wind field.
@@ -34,7 +40,7 @@ export function createWindRendering({ cesium, container, getViewer } = {}) {
     };
   };
 
-  const wrapLon = (lon) => ((lon + 180) % 360 + 360) % 360 - 180;
+  const wrapLon = (lon) => ((((lon + 180) % 360) + 360) % 360) - 180;
   const clampLat = (lat) => Math.max(-89, Math.min(89, lat));
   const finite = (value) => Number.isFinite(value);
 
@@ -55,7 +61,13 @@ export function createWindRendering({ cesium, container, getViewer } = {}) {
           const east = math.toDegrees(rect.east);
           const south = math.toDegrees(rect.south);
           const north = math.toDegrees(rect.north);
-          if (finite(west) && finite(east) && finite(south) && finite(north) && east > west)
+          if (
+            finite(west) &&
+            finite(east) &&
+            finite(south) &&
+            finite(north) &&
+            east > west
+          )
             return { west, east, south, north };
         }
       } catch {
@@ -71,7 +83,12 @@ export function createWindRendering({ cesium, container, getViewer } = {}) {
       );
       const lon = math.toDegrees(carto.longitude);
       const lat = math.toDegrees(carto.latitude);
-      return { west: lon - spread, east: lon + spread, south: lat - spread, north: lat + spread };
+      return {
+        west: lon - spread,
+        east: lon + spread,
+        south: lat - spread,
+        north: lat + spread,
+      };
     }
     return null;
   };
@@ -164,7 +181,9 @@ export function createWindRendering({ cesium, container, getViewer } = {}) {
     if (!viewer || viewer.isDestroyed?.()) return;
     try {
       resize(viewer);
-      const dt = lastTime ? Math.min(0.1, Math.max(0.001, (time - lastTime) / 1000)) : 0.016;
+      const dt = lastTime
+        ? Math.min(0.1, Math.max(0.001, (time - lastTime) / 1000))
+        : 0.016;
       lastTime = time;
 
       if (!field) {
@@ -174,8 +193,15 @@ export function createWindRendering({ cesium, container, getViewer } = {}) {
       const scene = viewer.scene;
       let occluder = null;
       try {
-        if (cesium.EllipsoidalOccluder && cesium.Ellipsoid && scene.camera?.positionWC)
-          occluder = new cesium.EllipsoidalOccluder(cesium.Ellipsoid.WGS84, scene.camera.positionWC);
+        if (
+          cesium.EllipsoidalOccluder &&
+          cesium.Ellipsoid &&
+          scene.camera?.positionWC
+        )
+          occluder = new cesium.EllipsoidalOccluder(
+            cesium.Ellipsoid.WGS84,
+            scene.camera.positionWC,
+          );
       } catch {
         occluder = null; // fall back to frustum-only culling
       }
@@ -232,7 +258,10 @@ export function createWindRendering({ cesium, container, getViewer } = {}) {
         if (speed > 0.01) {
           const speedT = Math.min(1, speed / 30);
           const targetPx = 1.3 + Math.pow(speedT, 0.75) * 4.2;
-          const cosLat = Math.max(0.05, Math.cos((particle.lat * Math.PI) / 180));
+          const cosLat = Math.max(
+            0.05,
+            Math.cos((particle.lat * Math.PI) / 180),
+          );
           const probeLon = particle.lon + (wind.u / speed) * (0.001 / cosLat);
           const probeLat = particle.lat + (wind.v / speed) * 0.001;
           const probe = project(scene, occluder, probeLon, probeLat);
@@ -243,8 +272,13 @@ export function createWindRendering({ cesium, container, getViewer } = {}) {
               const scale = targetPx / px;
               // RK2 midpoint advection for smooth streamline curvature along vortices
               const halfDt = (0.0005 * scale * 111320) / speed;
-              const midLon = particle.lon + (wind.u * halfDt) / metersPerDegreeLon(particle.lat);
-              const midLat = Math.max(-89, Math.min(89, particle.lat + (wind.v * halfDt) / 111320));
+              const midLon =
+                particle.lon +
+                (wind.u * halfDt) / metersPerDegreeLon(particle.lat);
+              const midLat = Math.max(
+                -89,
+                Math.min(89, particle.lat + (wind.v * halfDt) / 111320),
+              );
               const midWind = sampleWind(field, midLon, midLat);
               const fullDt = (0.001 * scale * 111320) / speed;
               advectParticle(particle, midWind, fullDt, { speedScale: 1 });
@@ -286,7 +320,10 @@ export function createWindRendering({ cesium, container, getViewer } = {}) {
         const len = trail.length;
         if (len >= 2) {
           const color = windColor(speed);
-          const lifeFrac = Math.min(1, Math.max(0, particle.age / particle.life));
+          const lifeFrac = Math.min(
+            1,
+            Math.max(0, particle.age / particle.life),
+          );
           const lifeFade = Math.sin(lifeFrac * Math.PI);
 
           if (len < 4) {

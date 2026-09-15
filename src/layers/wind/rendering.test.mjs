@@ -62,7 +62,11 @@ function harness({ occluded = false } = {}) {
       worldToWindowCoordinates: () => ({ x: 100, y: 100 }),
     },
   };
-  const rendering = createWindRendering({ cesium, container, getViewer: () => viewer });
+  const rendering = createWindRendering({
+    cesium,
+    container,
+    getViewer: () => viewer,
+  });
   return { rendering, canvas, container, callbacks, strokes };
 }
 

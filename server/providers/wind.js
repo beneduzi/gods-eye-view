@@ -95,7 +95,11 @@ export function windProxy({
       } catch (error) {
         const old = caches.get(model);
         if (old) {
-          old.manifest = { ...old.manifest, stale: true, reason: error.message };
+          old.manifest = {
+            ...old.manifest,
+            stale: true,
+            reason: error.message,
+          };
           return old;
         }
         return {
@@ -133,8 +137,16 @@ export function windProxy({
       if (!state.grid || url.pathname !== `/grid/${state.idGrid}.bin`)
         return sendJson(res, { error: 'unknown_grid' }, 404);
       const payload = Buffer.concat([
-        Buffer.from(state.grid.u.buffer, state.grid.u.byteOffset, state.grid.u.byteLength),
-        Buffer.from(state.grid.v.buffer, state.grid.v.byteOffset, state.grid.v.byteLength),
+        Buffer.from(
+          state.grid.u.buffer,
+          state.grid.u.byteOffset,
+          state.grid.u.byteLength,
+        ),
+        Buffer.from(
+          state.grid.v.buffer,
+          state.grid.v.byteOffset,
+          state.grid.v.byteLength,
+        ),
       ]);
       res.writeHead(200, {
         'Content-Type': 'application/octet-stream',

@@ -40,7 +40,10 @@ export function parseGfsIdx(text) {
  * @param {{level?: string}} [options]
  * @returns {{u: {start: number, end: number}, v: {start: number, end: number}}}
  */
-export function windMessageRanges(parsed, { level = '10 m above ground' } = {}) {
+export function windMessageRanges(
+  parsed,
+  { level = '10 m above ground' } = {},
+) {
   const range = (variable) => {
     const index = parsed.messages.findIndex(
       (message) => message.variable === variable && message.level === level,
@@ -88,12 +91,22 @@ export async function fetchRange({
   return buffer;
 }
 
-import { GFS_BUCKET, gfsObjectKey, selectLatestGfsCycle, nearestGfsStep } from './catalog.js';
+import {
+  GFS_BUCKET,
+  gfsObjectKey,
+  selectLatestGfsCycle,
+  nearestGfsStep,
+} from './catalog.js';
 import { decodeWindGribMessage } from './decode.js';
 import { resampleWindGrid } from './grid.js';
 
 /** Fetch and decode the GFS 10 m wind field valid closest to now. */
-export async function fetchGfsWind({ fetchImpl = fetch, now = () => Date.now(), targetDx = 1, decodeImpl = decodeWindGribMessage } = {}) {
+export async function fetchGfsWind({
+  fetchImpl = fetch,
+  now = () => Date.now(),
+  targetDx = 1,
+  decodeImpl = decodeWindGribMessage,
+} = {}) {
   const nowMs = now();
   const cycle = selectLatestGfsCycle(nowMs);
   const runMs = Date.UTC(
@@ -113,8 +126,24 @@ export async function fetchGfsWind({ fetchImpl = fetch, now = () => Date.now(), 
     fetchRange({ url: base, ...ranges.v, fetchImpl }),
   ]);
   const [u, v] = await Promise.all([decodeImpl(uBuffer), decodeImpl(vBuffer)]);
-  const grid = resampleWindGrid({ u: u.values, v: v.values, ni: u.ni, nj: u.nj, lo1: u.lo1, la1: u.la1, di: u.di, dj: u.dj, dx: targetDx, dy: targetDx });
+  const grid = resampleWindGrid({
+    u: u.values,
+    v: v.values,
+    ni: u.ni,
+    nj: u.nj,
+    lo1: u.lo1,
+    la1: u.la1,
+    di: u.di,
+    dj: u.dj,
+    dx: targetDx,
+    dy: targetDx,
+  });
   const runIso = new Date(runMs).toISOString();
   const validIso = new Date(runMs + forecastHour * 3600_000).toISOString();
-  return { cycle: { ...cycle, forecastHour, runIso, validIso }, level: '10 m above ground', units: 'm/s', grid };
+  return {
+    cycle: { ...cycle, forecastHour, runIso, validIso },
+    level: '10 m above ground',
+    units: 'm/s',
+    grid,
+  };
 }

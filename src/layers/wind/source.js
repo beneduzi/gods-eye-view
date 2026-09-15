@@ -1,12 +1,17 @@
 /** Create a source that loads the current wind field. */
-export function createWindSource({ fetchImpl = (...args) => globalThis.fetch(...args) } = {}) {
+export function createWindSource({
+  fetchImpl = (...args) => globalThis.fetch(...args),
+} = {}) {
   return {
     async getSnapshot({ signal, model = 'gfs' } = {}) {
       signal?.throwIfAborted();
-      const response = await fetchImpl(`/api/wind/manifest?model=${encodeURIComponent(model)}`, {
-        signal,
-        cache: 'no-store',
-      });
+      const response = await fetchImpl(
+        `/api/wind/manifest?model=${encodeURIComponent(model)}`,
+        {
+          signal,
+          cache: 'no-store',
+        },
+      );
       signal?.throwIfAborted();
       if (!response.ok) throw new Error(`Wind HTTP ${response.status}`);
       const manifest = await response.json();

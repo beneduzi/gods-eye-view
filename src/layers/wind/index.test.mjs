@@ -3,8 +3,14 @@ import assert from 'node:assert/strict';
 import { createWindLayer, formatWindValidTime, windStats } from './index.js';
 
 test('formatWindValidTime formats UTC dates and falls back for invalid/missing input', () => {
-  assert.equal(formatWindValidTime('2026-09-14T12:00:00.000Z'), '2026-09-14 12:00 UTC');
-  assert.equal(formatWindValidTime('2026-01-05T06:30:00.000Z'), '2026-01-05 06:30 UTC');
+  assert.equal(
+    formatWindValidTime('2026-09-14T12:00:00.000Z'),
+    '2026-09-14 12:00 UTC',
+  );
+  assert.equal(
+    formatWindValidTime('2026-01-05T06:30:00.000Z'),
+    '2026-01-05 06:30 UTC',
+  );
   assert.equal(formatWindValidTime(null), null);
   assert.equal(formatWindValidTime(undefined), null);
   assert.equal(formatWindValidTime('invalid-date'), null);
@@ -13,7 +19,10 @@ test('formatWindValidTime formats UTC dates and falls back for invalid/missing i
 test('wind layer provides row controls with active model and valid timestamp', async () => {
   let manifest = {
     model: 'gfs',
-    cycle: { validIso: '2026-09-14T18:00:00.000Z', runIso: '2026-09-14T12:00:00.000Z' },
+    cycle: {
+      validIso: '2026-09-14T18:00:00.000Z',
+      runIso: '2026-09-14T12:00:00.000Z',
+    },
     grid: { nx: 2, ny: 2 },
     unavailable: false,
   };
@@ -47,7 +56,11 @@ test('wind layer provides row controls with active model and valid timestamp', a
   const cesium = {
     Cartesian3: { fromDegrees: () => ({}) },
     Ellipsoid: { WGS84: {} },
-    EllipsoidalOccluder: class { isPointVisible() { return true; } },
+    EllipsoidalOccluder: class {
+      isPointVisible() {
+        return true;
+      }
+    },
     SceneTransforms: { worldToWindowCoordinates: () => ({ x: 10, y: 10 }) },
   };
 
@@ -83,7 +96,10 @@ test('wind layer provides row controls with active model and valid timestamp', a
 
   manifest = {
     model: 'ifs',
-    cycle: { validIso: '2026-09-14T21:00:00.000Z', runIso: '2026-09-14T12:00:00.000Z' },
+    cycle: {
+      validIso: '2026-09-14T21:00:00.000Z',
+      runIso: '2026-09-14T12:00:00.000Z',
+    },
     grid: { nx: 2, ny: 2 },
     unavailable: false,
   };
@@ -98,7 +114,11 @@ test('wind layer provides row controls with active model and valid timestamp', a
   assert.equal(ifsStats.source, 'ECMWF IFS');
 
   // Unavailable manifest fallback
-  manifest = { model: 'ifs', unavailable: true, reason: 'ECMWF upstream outage' };
+  manifest = {
+    model: 'ifs',
+    unavailable: true,
+    reason: 'ECMWF upstream outage',
+  };
   await layer.update(viewer);
   const unavailControls = layer.getRowControls();
   assert.match(unavailControls.info, /IFS · Valid: Unavailable/);

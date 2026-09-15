@@ -20,14 +20,22 @@ export function windStats(manifest) {
   const time = manifest?.cycle?.validIso || manifest?.cycle?.runIso;
   return {
     count: manifest?.grid ? manifest.grid.nx * manifest.grid.ny : 0,
-    lastUpdate: time ? Date.parse(time) : manifest?.fetchedAt ?? null,
-    error: manifest?.unavailable ? manifest.reason || 'Wind unavailable' : manifest?.reason || null,
+    lastUpdate: time ? Date.parse(time) : (manifest?.fetchedAt ?? null),
+    error: manifest?.unavailable
+      ? manifest.reason || 'Wind unavailable'
+      : manifest?.reason || null,
   };
 }
 
 /** Create the GFS/IFS wind data layer. */
-export function createWindLayer({ feed, cesium = Cesium, container, services } = {}) {
-  if (typeof feed?.getSnapshot !== 'function') throw new TypeError('Wind requires a snapshot source');
+export function createWindLayer({
+  feed,
+  cesium = Cesium,
+  container,
+  services,
+} = {}) {
+  if (typeof feed?.getSnapshot !== 'function')
+    throw new TypeError('Wind requires a snapshot source');
   let viewer = null;
   let request = null;
   let enabled = false;
@@ -38,18 +46,43 @@ export function createWindLayer({ feed, cesium = Cesium, container, services } =
   let generation = 0;
   let rowControlsListener = null;
   const layer = {
-    id: 'wind', name: 'Wind', icon: '🌬', source: 'NOAA GFS / ECMWF IFS', updateInterval: 3600_000,
-    init(nextViewer) { viewer = nextViewer; rendering = createWindRendering({ cesium, container: nextViewer.container, getViewer: () => viewer }); rendering.attach(); },
-    enable() { enabled = true; rendering?.start(); },
-    disable() { request?.abort(); request = null; enabled = false; rendering?.stop(); rendering?.clear(); },
+    id: 'wind',
+    name: 'Wind',
+    icon: '🌬',
+    source: 'NOAA GFS / ECMWF IFS',
+    updateInterval: 3600_000,
+    init(nextViewer) {
+      viewer = nextViewer;
+      rendering = createWindRendering({
+        cesium,
+        container: nextViewer.container,
+        getViewer: () => viewer,
+      });
+      rendering.attach();
+    },
+    enable() {
+      enabled = true;
+      rendering?.start();
+    },
+    disable() {
+      request?.abort();
+      request = null;
+      enabled = false;
+      rendering?.stop();
+      rendering?.clear();
+    },
     async update(nextViewer, { signal } = {}) {
       if (!enabled) return false;
       request?.abort();
       const controller = new AbortController();
       request = controller;
       try {
-        const snapshot = await feed.getSnapshot({ signal: signal || controller.signal, model });
-        if (!enabled || controller.signal.aborted || signal?.aborted) return false;
+        const snapshot = await feed.getSnapshot({
+          signal: signal || controller.signal,
+          model,
+        });
+        if (!enabled || controller.signal.aborted || signal?.aborted)
+          return false;
         manifest = snapshot;
         error = null;
         if (!snapshot.unavailable) rendering.setField(snapshot);
@@ -60,10 +93,13 @@ export function createWindLayer({ feed, cesium = Cesium, container, services } =
         error = cause?.message || 'Wind source unavailable';
         rowControlsListener?.();
         return true;
-      } finally { if (request === controller) request = null; }
+      } finally {
+        if (request === controller) request = null;
+      }
     },
     setParams(params = {}) {
-      if (!['gfs', 'ifs'].includes(params.model) || params.model === model) return;
+      if (!['gfs', 'ifs'].includes(params.model) || params.model === model)
+        return;
       model = params.model;
       generation += 1;
       rowControlsListener?.();
@@ -75,7 +111,9 @@ export function createWindLayer({ feed, cesium = Cesium, container, services } =
         });
       }
     },
-    getParams() { return { model }; },
+    getParams() {
+      return { model };
+    },
     /**
      * Row controls: a GFS/IFS source chip, the wind-intensity colour legend,
      * and active model valid timestamp readout with sensible fallback.
@@ -101,7 +139,9 @@ export function createWindLayer({ feed, cesium = Cesium, container, services } =
           ? manifest?.cycle?.validIso || manifest?.cycle?.runIso
           : null;
       const validTimestamp = formatWindValidTime(validIso);
-      const validLabel = validTimestamp ? `Valid: ${validTimestamp}` : 'Valid: Unavailable';
+      const validLabel = validTimestamp
+        ? `Valid: ${validTimestamp}`
+        : 'Valid: Unavailable';
 
       return {
         chips: [chip('gfs', 'GFS'), chip('ifs', 'IFS')],
@@ -124,7 +164,14 @@ export function createWindLayer({ feed, cesium = Cesium, container, services } =
     setRowControlsListener(listener) {
       rowControlsListener = typeof listener === 'function' ? listener : null;
     },
-    destroy() { request?.abort(); request = null; enabled = false; rendering?.destroy(); rendering = null; viewer = null; },
+    destroy() {
+      request?.abort();
+      request = null;
+      enabled = false;
+      rendering?.destroy();
+      rendering = null;
+      viewer = null;
+    },
     getStats() {
       const stats = windStats(manifest);
       const modelUpper = (model || 'gfs').toUpperCase();
@@ -141,7 +188,9 @@ export function createWindLayer({ feed, cesium = Cesium, container, services } =
         error: error || stats.error,
       };
     },
-    getParticleCount() { return rendering?.getParticleCount() || 0; },
+    getParticleCount() {
+      return rendering?.getParticleCount() || 0;
+    },
   };
   return layer;
 }

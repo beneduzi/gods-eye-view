@@ -887,6 +887,8 @@
   cursor: default;
   opacity: 0.75;
   font-style: italic;
+}
+
 .data-toggle-controls-info {
   display: flex;
   align-items: center;
