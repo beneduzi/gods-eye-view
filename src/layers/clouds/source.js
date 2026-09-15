@@ -5,10 +5,13 @@ export function createCloudsSource({
   return {
     async getSnapshot({ signal, product = 'GEOCOLOR' } = {}) {
       signal?.throwIfAborted();
-      const response = await fetchImpl('/api/goes/manifest?product=' + encodeURIComponent(product), {
-        signal,
-        cache: 'no-store',
-      });
+      const response = await fetchImpl(
+        '/api/goes/manifest?product=' + encodeURIComponent(product),
+        {
+          signal,
+          cache: 'no-store',
+        },
+      );
       let payload;
       try {
         payload = await response.json();

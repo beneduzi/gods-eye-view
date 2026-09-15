@@ -9,11 +9,14 @@ export const GOES_R_NAV = Object.freeze({
 export const GOES_GRID_HALF_EXTENT_RAD = 0.151844;
 
 /** Create the navigation constants for a geostationary satellite. */
-export function satelliteNav(lon0Deg, {
-  a = GOES_R_NAV.a,
-  b = GOES_R_NAV.b,
-  perspectivePointHeight = GOES_R_NAV.perspectivePointHeight,
-} = {}) {
+export function satelliteNav(
+  lon0Deg,
+  {
+    a = GOES_R_NAV.a,
+    b = GOES_R_NAV.b,
+    perspectivePointHeight = GOES_R_NAV.perspectivePointHeight,
+  } = {},
+) {
   return { a, b, H: a + perspectivePointHeight, lon0: lon0Deg };
 }
 
@@ -24,7 +27,9 @@ export function scanAnglesToGeodetic(x, y, nav) {
   const cosX = Math.cos(x);
   const sinY = Math.sin(y);
   const cosY = Math.cos(y);
-  const aa = sinX * sinX + cosX * cosX * (cosY * cosY + (a * a) / (b * b) * sinY * sinY);
+  const aa =
+    sinX * sinX +
+    cosX * cosX * (cosY * cosY + ((a * a) / (b * b)) * sinY * sinY);
   const bb = -2 * H * cosX * cosY;
   const cc = H * H - a * a;
   const disc = bb * bb - 4 * aa * cc;
@@ -33,7 +38,7 @@ export function scanAnglesToGeodetic(x, y, nav) {
   const sx = rs * cosX * cosY;
   const sy = -rs * sinX;
   const sz = rs * cosX * sinY;
-  const lat = Math.atan((a * a) / (b * b) * sz / Math.hypot(H - sx, sy));
+  const lat = Math.atan((((a * a) / (b * b)) * sz) / Math.hypot(H - sx, sy));
   const lon = lon0 * RAD_PER_DEG - Math.atan2(sy, H - sx);
   return { lat: lat * DEG_PER_RAD, lon: normalizeDegrees(lon * DEG_PER_RAD) };
 }
@@ -49,7 +54,7 @@ export function geodeticToScanAngles(lat, lon, nav) {
   const X = N * Math.cos(phi) * Math.cos(lam);
   const Y = N * Math.cos(phi) * Math.sin(lam);
   const Z = N * (1 - e2) * sinPhi;
-  if (X * (H - X) - Y * Y - (a * a) / (b * b) * Z * Z <= 0) return null;
+  if (X * (H - X) - Y * Y - ((a * a) / (b * b)) * Z * Z <= 0) return null;
   const r = Math.hypot(H - X, Y, Z);
   return { x: Math.asin(Y / r), y: Math.atan2(Z, H - X) };
 }

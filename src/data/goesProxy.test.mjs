@@ -20,7 +20,11 @@ function install(plugin) {
       },
     },
   });
-  assert.equal(typeof handler, 'function', 'goes proxy registered a middleware');
+  assert.equal(
+    typeof handler,
+    'function',
+    'goes proxy registered a middleware',
+  );
   return async (pathname, method = 'GET') => {
     const res = {
       statusCode: 200,
@@ -50,7 +54,12 @@ function install(plugin) {
 
 async function makeStarJpeg() {
   return sharp({
-    create: { width: 64, height: 64, channels: 3, background: { r: 10, g: 20, b: 30 } },
+    create: {
+      width: 64,
+      height: 64,
+      channels: 3,
+      background: { r: 10, g: 20, b: 30 },
+    },
   })
     .jpeg()
     .toBuffer();
@@ -62,14 +71,19 @@ function makeFetch(jpeg, { fail = false } = {}) {
     if (fail) throw new Error('star upstream down');
     return new Response(jpeg, {
       status: 200,
-      headers: { 'Content-Type': 'image/jpeg', 'Last-Modified': 'Mon, 14 Sep 2026 14:45:15 GMT' },
+      headers: {
+        'Content-Type': 'image/jpeg',
+        'Last-Modified': 'Mon, 14 Sep 2026 14:45:15 GMT',
+      },
     });
   };
 }
 
 test('GOES manifest describes both satellites with geographic parts', async () => {
   const jpeg = await makeStarJpeg();
-  const request = install(goesProxy({ fetchImpl: makeFetch(jpeg), outputHeight: 32 }));
+  const request = install(
+    goesProxy({ fetchImpl: makeFetch(jpeg), outputHeight: 32 }),
+  );
   const res = await request('/api/goes/manifest');
   assert.equal(res.statusCode, 200);
   assert.equal(res.headers['content-type'], 'application/json');
@@ -87,8 +101,14 @@ test('GOES manifest describes both satellites with geographic parts', async () =
     assert.equal(source.parts.length >= 1, true);
     for (const part of source.parts) {
       assert.match(part.url, /^\/api\/goes\/frames\/[^/]+\/\d+\.png$/);
-      assert.ok(part.rectangle.south < part.rectangle.north, 'rectangle is not inverted');
-      assert.ok(part.rectangle.west < part.rectangle.east, 'rectangle is not inverted');
+      assert.ok(
+        part.rectangle.south < part.rectangle.north,
+        'rectangle is not inverted',
+      );
+      assert.ok(
+        part.rectangle.west < part.rectangle.east,
+        'rectangle is not inverted',
+      );
       assert.ok(part.rectangle.west >= -180 && part.rectangle.east <= 180);
     }
   }
@@ -96,18 +116,25 @@ test('GOES manifest describes both satellites with geographic parts', async () =
 
 test('GOES frame route serves the reprojected PNG bytes', async () => {
   const jpeg = await makeStarJpeg();
-  const request = install(goesProxy({ fetchImpl: makeFetch(jpeg), outputHeight: 32 }));
+  const request = install(
+    goesProxy({ fetchImpl: makeFetch(jpeg), outputHeight: 32 }),
+  );
   const manifest = JSON.parse((await request('/api/goes/manifest')).body);
   const url = manifest.sources[0].parts[0].url;
   const res = await request(url);
   assert.equal(res.statusCode, 200);
   assert.equal(res.headers['content-type'], 'image/png');
-  assert.deepEqual(Buffer.from(res.body).subarray(0, 2), Buffer.from([0x89, 0x50]));
+  assert.deepEqual(
+    Buffer.from(res.body).subarray(0, 2),
+    Buffer.from([0x89, 0x50]),
+  );
 });
 
 test('GOES status summarizes sources without the frame payload', async () => {
   const jpeg = await makeStarJpeg();
-  const request = install(goesProxy({ fetchImpl: makeFetch(jpeg), outputHeight: 32 }));
+  const request = install(
+    goesProxy({ fetchImpl: makeFetch(jpeg), outputHeight: 32 }),
+  );
   await request('/api/goes/manifest');
   const res = await request('/api/goes/status');
   const body = JSON.parse(res.body);
@@ -115,7 +142,9 @@ test('GOES status summarizes sources without the frame payload', async () => {
   assert.equal(body.sources.length, 2);
   assert.equal('flashes' in body, false);
   for (const source of body.sources) {
-    assert.ok('satelliteId' in source && 'frameId' in source && 'unavailable' in source);
+    assert.ok(
+      'satelliteId' in source && 'frameId' in source && 'unavailable' in source,
+    );
   }
 });
 
@@ -129,7 +158,9 @@ test('GOES manifest is cached within its TTL', async () => {
       outputHeight: 32,
       fetchImpl: async () => {
         calls += 1;
-        return new Response(jpeg, { headers: { 'Last-Modified': 'Mon, 14 Sep 2026 14:45:15 GMT' } });
+        return new Response(jpeg, {
+          headers: { 'Last-Modified': 'Mon, 14 Sep 2026 14:45:15 GMT' },
+        });
       },
     }),
   );
@@ -137,7 +168,11 @@ test('GOES manifest is cached within its TTL', async () => {
   const first = calls;
   assert.equal(first, 2, 'one STAR fetch per satellite');
   await request('/api/goes/manifest');
-  assert.equal(calls, first, 'a second request inside the TTL must not refetch');
+  assert.equal(
+    calls,
+    first,
+    'a second request inside the TTL must not refetch',
+  );
   clock += 6 * 60_000;
   await request('/api/goes/manifest');
   assert.equal(calls, first + 2, 'a request past the TTL refetches');
@@ -153,7 +188,9 @@ test('GOES keeps last-good frames and marks sources unavailable on upstream fail
       outputHeight: 32,
       fetchImpl: async () => {
         if (failing) throw new Error('star upstream down');
-        return new Response(jpeg, { headers: { 'Last-Modified': 'Mon, 14 Sep 2026 14:45:15 GMT' } });
+        return new Response(jpeg, {
+          headers: { 'Last-Modified': 'Mon, 14 Sep 2026 14:45:15 GMT' },
+        });
       },
     }),
   );
@@ -162,7 +199,10 @@ test('GOES keeps last-good frames and marks sources unavailable on upstream fail
   failing = true;
   clock += 6 * 60_000;
   const degraded = JSON.parse((await request('/api/goes/manifest')).body);
-  assert.equal(degraded.sources.every((source) => source.unavailable), true);
+  assert.equal(
+    degraded.sources.every((source) => source.unavailable),
+    true,
+  );
   assert.equal(degraded.sources[0].reason, 'star upstream down');
   // The last-good frame bytes remain addressable for the client.
   const frame = await request(`/api/goes/frames/${frameId}/0.png`);
@@ -171,7 +211,9 @@ test('GOES keeps last-good frames and marks sources unavailable on upstream fail
 
 test('GOES serves a JSON 404 for an unknown frame', async () => {
   const jpeg = await makeStarJpeg();
-  const request = install(goesProxy({ fetchImpl: makeFetch(jpeg), outputHeight: 32 }));
+  const request = install(
+    goesProxy({ fetchImpl: makeFetch(jpeg), outputHeight: 32 }),
+  );
   const res = await request('/api/goes/frames/nope-000000000000/0.png');
   assert.equal(res.statusCode, 404);
   assert.deepEqual(JSON.parse(res.body), { error: 'unknown_frame' });
@@ -179,7 +221,9 @@ test('GOES serves a JSON 404 for an unknown frame', async () => {
 
 test('GOES leaves unrelated paths to the next middleware', async () => {
   const jpeg = await makeStarJpeg();
-  const request = install(goesProxy({ fetchImpl: makeFetch(jpeg), outputHeight: 32 }));
+  const request = install(
+    goesProxy({ fetchImpl: makeFetch(jpeg), outputHeight: 32 }),
+  );
   const res = await request('/api/something-else');
   assert.equal(res.nextCalled, true);
   assert.equal(res.headersSent, false);
@@ -189,10 +233,14 @@ test('GOES validates the STAR JPEG magic', async () => {
   const request = install(
     goesProxy({
       outputHeight: 32,
-      fetchImpl: async () => new Response(Buffer.from('not a jpeg'), { headers: {} }),
+      fetchImpl: async () =>
+        new Response(Buffer.from('not a jpeg'), { headers: {} }),
     }),
   );
   const body = JSON.parse((await request('/api/goes/manifest')).body);
-  assert.equal(body.sources.every((source) => source.unavailable), true);
+  assert.equal(
+    body.sources.every((source) => source.unavailable),
+    true,
+  );
   assert.ok(JPEG_MAGIC.length === 2);
 });

@@ -1,9 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { diskScanExtent, geodeticToScanAngles, satelliteNav, scanAnglesToGeodetic } from '../../server/providers/geostationary/projection.js';
+import {
+  diskScanExtent,
+  geodeticToScanAngles,
+  satelliteNav,
+  scanAnglesToGeodetic,
+} from '../../server/providers/geostationary/projection.js';
 
 const nav = satelliteNav(-75.2);
-const near = (actual, expected, tolerance) => assert.ok(Math.abs(actual - expected) <= tolerance, `${actual} != ${expected}`);
+const near = (actual, expected, tolerance) =>
+  assert.ok(
+    Math.abs(actual - expected) <= tolerance,
+    `${actual} != ${expected}`,
+  );
 
 test('GOES navigation analytic anchors and round trips', () => {
   const origin = scanAnglesToGeodetic(0, 0, nav);
@@ -15,9 +24,15 @@ test('GOES navigation analytic anchors and round trips', () => {
   const edge = diskScanExtent(nav);
   const edgePoint = scanAnglesToGeodetic(edge, 0, nav);
   near(edgePoint.lat, 0, 1e-4);
-  near(edgePoint.lon, -75.2 + (Math.acos(nav.a / nav.H) * 180 / Math.PI), 1e-4);
+  near(edgePoint.lon, -75.2 + (Math.acos(nav.a / nav.H) * 180) / Math.PI, 1e-4);
   const longitude = 45;
-  const expectedX = Math.asin(nav.a * Math.sin(longitude * Math.PI / 180) / Math.hypot(nav.H - nav.a * Math.cos(longitude * Math.PI / 180), nav.a * Math.sin(longitude * Math.PI / 180)));
+  const expectedX = Math.asin(
+    (nav.a * Math.sin((longitude * Math.PI) / 180)) /
+      Math.hypot(
+        nav.H - nav.a * Math.cos((longitude * Math.PI) / 180),
+        nav.a * Math.sin((longitude * Math.PI) / 180),
+      ),
+  );
   const equator = geodeticToScanAngles(0, -75.2 + longitude, nav);
   near(equator.x, expectedX, 1e-9);
   near(equator.y, 0, 1e-9);
