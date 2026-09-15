@@ -1153,6 +1153,7 @@
       "src/app/startupChrome.js",
       "src/app/stateChannel.js",
       "src/app/surfaceServices.js",
+      "src/app/sourceSlot.js",
       "src/app/tools.js",
       "src/app/viewer.js",
       "src/bloom.js",
