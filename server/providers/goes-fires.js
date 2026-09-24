@@ -1,6 +1,10 @@
 import path from 'node:path';
 import { promises as fsp } from 'node:fs';
 import { decodeFireGrid } from './goes/fireGrid.js';
+import {
+  readResponseTextCapped,
+  readResponseBytesCapped,
+} from '../../src/sources/httpBody.js';
 
 /**
  * Keyless NOAA GOES-R ABI fire/hot-spot proxy.
@@ -19,6 +23,8 @@ const SATELLITES = {
 const PRODUCT_PREFIX = 'ABI-L2-FDCF';
 const TTL_MS = 10 * 60_000; // the ABI full-disk scan cadence
 const LOOKBACK_HOURS = 6;
+const MAX_GRANULE_BYTES = 16 * 1024 * 1024;
+const CACHE_VERSION = 1;
 
 /** UTC day-of-year, the `DDD` segment of the S3 key. */
 export function dayOfYear(date) {
@@ -51,20 +57,25 @@ export function buildObjectUrl(bucket, key) {
 export async function latestGranuleKey(bucket, now, fetchImpl) {
   for (let hoursBack = 0; hoursBack <= LOOKBACK_HOURS; hoursBack += 1) {
     const at = new Date(now - hoursBack * 3_600_000);
-    const response = await fetchImpl(buildListUrl(bucket, at));
+    const signal = AbortSignal.timeout(15_000);
+    const response = await fetchImpl(buildListUrl(bucket, at), { signal });
     if (!response.ok) continue;
-    const xml = await response.text();
-    const keys = [...xml.matchAll(/<Key>([^<]+)<\/Key>/g)].map((m) => m[1]);
+    const xml = await readResponseTextCapped(response, 1024 * 1024, signal);
+    const expected = `${PRODUCT_PREFIX}/`;
+    const keys = [...xml.matchAll(/<Key>([^<]+)<\/Key>/g)]
+      .map((m) => m[1])
+      .filter((key) => key.startsWith(expected) && key.endsWith('.nc'));
     if (keys.length) return keys[keys.length - 1];
   }
   return null;
 }
 
 /** Confidence tier derived from DQF — NOT the FIRMS confidence category. */
-function confidenceTier(dqf) {
-  if (dqf === 0) return 'h';
-  if (dqf === 1) return 'n';
-  return 'l';
+function confidenceTier(mask) {
+  if ([10, 11, 30, 31].includes(Number(mask))) return 'h';
+  if ([13, 33].includes(Number(mask))) return 'n';
+  if ([14, 15, 34, 35].includes(Number(mask))) return 'l';
+  return null;
 }
 
 function toRows(grid, satelliteName) {
@@ -75,9 +86,9 @@ function toRows(grid, satelliteName) {
     lat: detection.lat,
     lon: detection.lon,
     frp: detection.frp,
-    confidence: confidenceTier(detection.dqf),
+    confidence: confidenceTier(detection.mask),
     brightness: detection.tempK,
-    daynight: detection.night ? 'N' : 'D',
+    daynight: detection.night == null ? null : detection.night ? 'N' : 'D',
     acqDate,
     acqTime,
     satellite: satelliteName,
@@ -104,7 +115,17 @@ export function goesFiresProxy({
     if (diskChecked) return;
     diskChecked = true;
     try {
-      memory = JSON.parse(await fsp.readFile(cachePath, 'utf8'));
+      const parsed = JSON.parse(await fsp.readFile(cachePath, 'utf8'));
+      const maxFutureMs = 5 * 60_000;
+      if (
+        parsed?.version === CACHE_VERSION &&
+        Number.isFinite(parsed.at) &&
+        parsed.at <= Date.now() + maxFutureMs &&
+        Array.isArray(parsed.sources) &&
+        Array.isArray(parsed.fires)
+      ) {
+        memory = parsed;
+      }
     } catch {
       /* cold cache */
     }
@@ -114,10 +135,19 @@ export function goesFiresProxy({
     const satellite = SATELLITES[key];
     const granule = await latestGranuleKey(satellite.bucket, now, fetchImpl);
     if (!granule) throw new Error(`no ${satellite.name} granule found`);
-    const response = await fetchImpl(buildObjectUrl(satellite.bucket, granule));
+    const signal = AbortSignal.timeout(60_000);
+    const response = await fetchImpl(
+      buildObjectUrl(satellite.bucket, granule),
+      { signal },
+    );
     if (!response.ok)
       throw new Error(`${satellite.name} granule HTTP ${response.status}`);
-    const bytes = new Uint8Array(await response.arrayBuffer());
+    const buffer = await readResponseBytesCapped(
+      response,
+      MAX_GRANULE_BYTES,
+      signal,
+    );
+    const bytes = new Uint8Array(buffer);
     const grid = await decodeFireGrid(bytes);
     return { satellite, rows: toRows(grid, satellite.name) };
   }
@@ -139,7 +169,7 @@ export function goesFiresProxy({
     // Partial success is still a cacheable snapshot, mirroring the FIRMS proxy.
     if (!sources.some((source) => source.ok))
       throw new Error('all GOES sources failed');
-    return { at: now, sources, fires };
+    return { version: CACHE_VERSION, at: now, sources, fires };
   }
 
   function snapshot(entry, stale) {
@@ -171,8 +201,15 @@ export function goesFiresProxy({
         inflight = refresh()
           .then(async (entry) => {
             memory = entry;
-            await fsp.mkdir(path.dirname(cachePath), { recursive: true });
-            await fsp.writeFile(cachePath, JSON.stringify(entry));
+            try {
+              await fsp.mkdir(path.dirname(cachePath), { recursive: true });
+              await fsp.writeFile(cachePath, JSON.stringify(entry), 'utf8');
+            } catch (error) {
+              console.warn(
+                '[goes-fires] cache write failed:',
+                error?.message || error,
+              );
+            }
             return entry;
           })
           .finally(() => {

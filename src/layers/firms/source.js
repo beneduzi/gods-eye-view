@@ -50,7 +50,14 @@ export function createFirmsSource({
       if (goes.response.ok) {
         if (!Array.isArray(goes.payload?.fires))
           throw new Error('Malformed fire snapshot');
-        return { ...goes.payload, provider: 'goes' };
+        return {
+          ...goes.payload,
+          provider: 'goes',
+          sourceText:
+            'NOAA GOES ABI · Americas · newest available ~10-minute scan',
+          guidance:
+            'Add FIRMS_MAP_KEY in Provider Settings for global detections over the trailing 24 hours.',
+        };
       }
       // Neither provider is usable: keep the established "KEY REQUIRED" hint so
       // the panel still tells the operator how to enable the keyed source.

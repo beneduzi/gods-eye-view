@@ -153,8 +153,8 @@ test('the endpoint serves FIRMS-shaped rows decoded from a real granule', async 
     assert.equal(first.satellite, 'GOES-19');
     assert.equal(first.instrument, 'ABI');
     assert.ok(Number.isFinite(first.lat) && Number.isFinite(first.lon));
-    // DQF 2 is the low tier, and that pixel is a daytime detection.
-    assert.equal(second.confidence, 'l');
+    // Mask 33 is nominal; DQF is diagnostic only.
+    assert.equal(second.confidence, 'n');
     assert.equal(second.daynight, 'D');
 
     // Within the TTL the cached snapshot is served without touching the network.
