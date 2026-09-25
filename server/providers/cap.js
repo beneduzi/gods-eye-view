@@ -117,87 +117,95 @@ export function capProxy({
   concurrency = 4,
   enabled = process.env.CAP_ENABLED !== 'false',
 } = {}) {
+  const handle = async (req, res, next) => {
+    if (req.url !== '/api/cap' && req.url !== '/' && req.url !== '')
+      return next();
+    const out = [];
+    if (enabled) {
+      const queue = optIn(sources).slice(0, maxDocuments);
+      let cursor = 0;
+      const worker = async () => {
+        while (cursor < queue.length) {
+          const [, source] = queue[cursor++];
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), timeoutMs);
+          try {
+            const response = await fetchImpl(source.url, {
+              redirect: 'error',
+              signal: controller.signal,
+              headers: {
+                accept:
+                  'application/xml, application/rss+xml, application/atom+xml, text/xml',
+                'user-agent': `Gods-Eye-View CAP/${source.region}`,
+              },
+            });
+            if (!response.ok) throw Error('http');
+            const body = await readResponseTextCapped(
+              response,
+              maxBytes,
+              controller.signal,
+            );
+            if (source.format === 'catalog') continue;
+            const documents =
+              source.format === 'cap'
+                ? [body]
+                : extractCapLinks(body, source, maxDocuments);
+            for (const url of documents) {
+              try {
+                const xml =
+                  url === body
+                    ? body
+                    : await fetchImpl(url, {
+                        redirect: 'error',
+                        signal: controller.signal,
+                        headers: { accept: 'application/xml, text/xml' },
+                      }).then((r) => {
+                        if (!r.ok) throw Error('http');
+                        return readResponseTextCapped(
+                          r,
+                          maxBytes,
+                          controller.signal,
+                        );
+                      });
+                out.push(
+                  ...parseCap(xml).map((alert) => ({
+                    ...alert,
+                    source: source.url,
+                    region: source.region,
+                  })),
+                );
+              } catch {
+                /* partial document failure */
+              }
+            }
+          } catch {
+            /* partial source failure */
+          } finally {
+            clearTimeout(timer);
+          }
+        }
+      };
+      await Promise.all(
+        Array.from({ length: Math.min(concurrency, queue.length) }, worker),
+      );
+    }
+    res.setHeader('content-type', 'application/json');
+    res.end(
+      JSON.stringify({
+        source: 'cap',
+        alerts: out,
+        generatedAt: new Date().toISOString(),
+      }),
+    );
+  };
   return {
     name: 'cap',
-    async handle(req, res, next) {
-      if (req.url !== '/api/cap') return next();
-      const out = [];
-      if (enabled) {
-        const queue = optIn(sources).slice(0, maxDocuments);
-        let cursor = 0;
-        const worker = async () => {
-          while (cursor < queue.length) {
-            const [, source] = queue[cursor++];
-            const controller = new AbortController();
-            const timer = setTimeout(() => controller.abort(), timeoutMs);
-            try {
-              const response = await fetchImpl(source.url, {
-                redirect: 'error',
-                signal: controller.signal,
-                headers: {
-                  accept:
-                    'application/xml, application/rss+xml, application/atom+xml, text/xml',
-                  'user-agent': `Gods-Eye-View CAP/${source.region}`,
-                },
-              });
-              if (!response.ok) throw Error('http');
-              const body = await readResponseTextCapped(
-                response,
-                maxBytes,
-                controller.signal,
-              );
-              if (source.format === 'catalog') continue;
-              const documents =
-                source.format === 'cap'
-                  ? [body]
-                  : extractCapLinks(body, source, maxDocuments);
-              for (const url of documents) {
-                try {
-                  const xml =
-                    url === body
-                      ? body
-                      : await fetchImpl(url, {
-                          redirect: 'error',
-                          signal: controller.signal,
-                          headers: { accept: 'application/xml, text/xml' },
-                        }).then((r) => {
-                          if (!r.ok) throw Error('http');
-                          return readResponseTextCapped(
-                            r,
-                            maxBytes,
-                            controller.signal,
-                          );
-                        });
-                  out.push(
-                    ...parseCap(xml).map((alert) => ({
-                      ...alert,
-                      source: source.url,
-                      region: source.region,
-                    })),
-                  );
-                } catch {
-                  /* partial document failure */
-                }
-              }
-            } catch {
-              /* partial source failure */
-            } finally {
-              clearTimeout(timer);
-            }
-          }
-        };
-        await Promise.all(
-          Array.from({ length: Math.min(concurrency, queue.length) }, worker),
-        );
-      }
-      res.setHeader('content-type', 'application/json');
-      res.end(
-        JSON.stringify({
-          source: 'cap',
-          alerts: out,
-          generatedAt: new Date().toISOString(),
-        }),
-      );
+    configureServer({ middlewares }) {
+      middlewares.use('/api/cap', handle);
     },
+    configurePreviewServer({ middlewares }) {
+      middlewares.use('/api/cap', handle);
+    },
+    handle,
   };
 }
