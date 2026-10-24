@@ -1,11 +1,24 @@
-import { parseCap } from '../../src/data/cap.js';
+import {
+  parseCap,
+  parseEcccAlerts,
+  parseNwsAlerts,
+} from '../../src/data/cap.js';
+import { createCapState } from '../../src/data/capState.js';
 import { readResponseTextCapped } from './common/http.js';
 
-const e = (url, region, format, enabled = true) => ({
+const envInt = (name, fallback, min = 1) => {
+  const raw = process.env[name];
+  if (raw === undefined || raw === '') return fallback;
+  const value = Number(raw);
+  return Number.isInteger(value) && value >= min ? value : fallback;
+};
+
+const e = (url, region, format, enabled = true, documentPathPrefix = null) => ({
   url,
   region,
   format,
   enabled,
+  documentPathPrefix,
 });
 export const CAP_SOURCES = Object.freeze({
   inmet: e('https://apiprevmet3.inmet.gov.br/avisos/rss', 'Brazil', 'rss'),
@@ -48,8 +61,24 @@ export const CAP_SOURCES = Object.freeze({
     'Guyana',
     'rss',
   ),
-  nws: e('https://api.weather.gov/alerts/active.atom', 'US', 'atom'),
-  eccc: e('https://weather.gc.ca/rss/warning/', 'Canada', 'catalog', false),
+  // One GeoJSON response holds every active alert (~2 MB for ~500 alerts);
+  // the Atom index would need one CAP document fetch per alert.
+  nws: {
+    ...e('https://api.weather.gov/alerts/active', 'US', 'nws-geojson'),
+    maxBytes: 16 * 1024 * 1024,
+  },
+  // MSC GeoMet holds every active ECCC alert, one feature per alert area
+  // (~3 MB for ~380 areas, ~5 s to answer); the CAP-CP files on the Datamart
+  // are one document per message with no index of the active set.
+  eccc: {
+    ...e(
+      'https://api.weather.gc.ca/collections/weather-alerts/items?f=json&limit=10000',
+      'Canada',
+      'eccc-geojson',
+    ),
+    maxBytes: 32 * 1024 * 1024,
+    timeoutMs: 30000,
+  },
   dwd: e(
     'https://www.dwd.de/DWD/warnungen/cap-feed/en/rss.xml',
     'Germany',
@@ -71,18 +100,29 @@ export const CAP_SOURCES = Object.freeze({
   wmo: e('', 'global', 'catalog', false),
   kde: e('', 'global', 'catalog', false),
 });
-export function allowedCapUrl(source, value) {
+const GEOJSON_PARSERS = Object.freeze({
+  'nws-geojson': parseNwsAlerts,
+  'eccc-geojson': parseEcccAlerts,
+});
+function pathWithinPrefix(pathname, prefix) {
+  const root = prefix.length > 1 ? prefix.replace(/\/+$/, '') : prefix;
+  return root === '/' || pathname === root || pathname.startsWith(`${root}/`);
+}
+function normalizedCapUrl(source, value) {
   try {
-    const a = new URL(value),
-      b = new URL(source.url);
-    return (
-      a.protocol === b.protocol &&
-      a.host === b.host &&
-      a.pathname.startsWith(b.pathname)
-    );
+    const base = new URL(source.url);
+    const candidate = new URL(value, base);
+    if (candidate.username || candidate.password) return null;
+    if (candidate.protocol !== base.protocol || candidate.host !== base.host)
+      return null;
+    const prefix = source.documentPathPrefix || base.pathname;
+    return pathWithinPrefix(candidate.pathname, prefix) ? candidate.href : null;
   } catch {
-    return false;
+    return null;
   }
+}
+export function allowedCapUrl(source, value) {
+  return Boolean(normalizedCapUrl(source, value));
 }
 export function extractCapLinks(body, source, max = 32) {
   const links = [];
@@ -94,8 +134,8 @@ export function extractCapLinks(body, source, max = 32) {
       /(?:href|uri)=["']([^"']+)|(?:href|uri)\s*=\s*([^\s>]+)/i,
     );
     const value = href?.[1] || href?.[2] || m[2]?.trim();
-    if (value && allowedCapUrl(source, value) && !links.includes(value))
-      links.push(value);
+    const normalized = value && normalizedCapUrl(source, value);
+    if (normalized && !links.includes(normalized)) links.push(normalized);
   }
   return links.slice(0, max);
 }
@@ -111,63 +151,107 @@ function optIn(sources) {
 export function capProxy({
   fetchImpl = globalThis.fetch,
   sources = CAP_SOURCES,
-  timeoutMs = 10000,
-  maxBytes = 2 * 1024 * 1024,
-  maxDocuments = 32,
-  concurrency = 4,
+  timeoutMs = envInt('CAP_TIMEOUT_MS', 10000),
+  maxBytes = envInt('CAP_MAX_BYTES', 2 * 1024 * 1024),
+  cacheTtlMs = envInt('CAP_CACHE_TTL_MS', 300000, 0),
+  maxDocuments = envInt('CAP_MAX_DOCUMENTS', 32),
+  concurrency = envInt('CAP_CONCURRENCY', 4),
   enabled = process.env.CAP_ENABLED !== 'false',
+  now = () => Date.now(),
 } = {}) {
-  const handle = async (req, res, next) => {
-    if (req.url !== '/api/cap' && req.url !== '/' && req.url !== '')
-      return next();
-    const out = [];
-    if (enabled) {
-      const queue = optIn(sources).slice(0, maxDocuments);
+  const state = createCapState({ now });
+  let loaded = false;
+  let lastAttemptAt = 0;
+  let generatedAt = null;
+  let refreshPromise = null;
+
+  const fetchText = async (
+    url,
+    accept,
+    region,
+    limit = maxBytes,
+    waitMs = timeoutMs,
+  ) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), waitMs);
+    try {
+      const response = await fetchImpl(url, {
+        redirect: 'error',
+        signal: controller.signal,
+        headers: {
+          accept,
+          'user-agent': `Gods-Eye-View CAP/${region}`,
+        },
+      });
+      if (!response.ok) throw Error('http');
+      return await readResponseTextCapped(response, limit, controller.signal);
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
+  const refresh = () => {
+    if (refreshPromise) return refreshPromise;
+    refreshPromise = (async () => {
+      const parsed = [];
+      const queue = enabled ? optIn(sources) : [];
       let cursor = 0;
+      let remainingDocuments = maxDocuments;
+      let successfulSources = 0;
+      const takeDocument = () => {
+        if (remainingDocuments <= 0) return false;
+        remainingDocuments -= 1;
+        return true;
+      };
       const worker = async () => {
         while (cursor < queue.length) {
           const [, source] = queue[cursor++];
-          const controller = new AbortController();
-          const timer = setTimeout(() => controller.abort(), timeoutMs);
+          if (!source?.url) continue;
           try {
-            const response = await fetchImpl(source.url, {
-              redirect: 'error',
-              signal: controller.signal,
-              headers: {
-                accept:
-                  'application/xml, application/rss+xml, application/atom+xml, text/xml',
-                'user-agent': `Gods-Eye-View CAP/${source.region}`,
-              },
-            });
-            if (!response.ok) throw Error('http');
-            const body = await readResponseTextCapped(
-              response,
-              maxBytes,
-              controller.signal,
+            const parseGeoJson = GEOJSON_PARSERS[source.format];
+            const body = await fetchText(
+              source.url,
+              parseGeoJson
+                ? 'application/geo+json'
+                : 'application/xml, application/rss+xml, application/atom+xml, text/xml',
+              source.region,
+              source.maxBytes || maxBytes,
+              Math.max(timeoutMs, source.timeoutMs || 0),
             );
+            if (parseGeoJson) {
+              parsed.push(
+                ...parseGeoJson(body).map((alert) => ({
+                  ...alert,
+                  source: source.url,
+                  region: source.region,
+                })),
+              );
+              successfulSources += 1;
+              continue;
+            }
+            successfulSources += 1;
             if (source.format === 'catalog') continue;
-            const documents =
-              source.format === 'cap'
-                ? [body]
-                : extractCapLinks(body, source, maxDocuments);
-            for (const url of documents) {
+            if (source.format === 'cap') {
+              if (!takeDocument()) continue;
+              parsed.push(
+                ...parseCap(body).map((alert) => ({
+                  ...alert,
+                  source: source.url,
+                  region: source.region,
+                })),
+              );
+              continue;
+            }
+            const links = extractCapLinks(body, source, remainingDocuments);
+            for (const url of links) {
+              if (!takeDocument()) break;
               try {
-                const xml =
-                  url === body
-                    ? body
-                    : await fetchImpl(url, {
-                        redirect: 'error',
-                        signal: controller.signal,
-                        headers: { accept: 'application/xml, text/xml' },
-                      }).then((r) => {
-                        if (!r.ok) throw Error('http');
-                        return readResponseTextCapped(
-                          r,
-                          maxBytes,
-                          controller.signal,
-                        );
-                      });
-                out.push(
+                const xml = await fetchText(
+                  url,
+                  'application/xml, text/xml',
+                  source.region,
+                );
+                parsed.push(
                   ...parseCap(xml).map((alert) => ({
                     ...alert,
                     source: source.url,
@@ -180,21 +264,47 @@ export function capProxy({
             }
           } catch {
             /* partial source failure */
-          } finally {
-            clearTimeout(timer);
           }
         }
       };
       await Promise.all(
         Array.from({ length: Math.min(concurrency, queue.length) }, worker),
       );
-    }
+      const alerts = state.ingest(parsed);
+      lastAttemptAt = now();
+      // Never turn a cold total upstream outage into a cached empty
+      // "success". With no last-good snapshot, the next request should get a
+      // fresh chance to acquire one; concurrent callers are still coalesced by
+      // refreshPromise. An intentionally disabled/empty catalogue is a valid
+      // empty snapshot and may be cached.
+      if (successfulSources > 0 || !enabled || queue.length === 0) {
+        generatedAt = new Date(lastAttemptAt).toISOString();
+        loaded = true;
+      }
+      return { alerts, generatedAt };
+    })().finally(() => {
+      refreshPromise = null;
+    });
+    return refreshPromise;
+  };
+
+  const snapshot = async () => {
+    const current = now();
+    if (!loaded) return refresh();
+    if (current - lastAttemptAt >= cacheTtlMs) void refresh().catch(() => {});
+    return { alerts: state.snapshot(), generatedAt };
+  };
+
+  const handle = async (req, res, next) => {
+    if (req.url !== '/api/cap' && req.url !== '/' && req.url !== '')
+      return next();
+    const current = await snapshot();
     res.setHeader('content-type', 'application/json');
     res.end(
       JSON.stringify({
         source: 'cap',
-        alerts: out,
-        generatedAt: new Date().toISOString(),
+        alerts: current.alerts,
+        generatedAt: current.generatedAt,
       }),
     );
   };
